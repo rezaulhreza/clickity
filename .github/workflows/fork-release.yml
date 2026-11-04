@@ -4,14 +4,8 @@ name: Fork Release
 # of the fork offer the update. The build is signed with an Apple Development certificate and
 # isn't notarized: the first launch on another Mac needs "Open Anyway".
 
+# Started by hand only: a release needs the signing and Sparkle secrets set on the repository first
 on:
-  push:
-    branches: [main]
-    paths:
-      - "Clickity/**"
-      - "Clickity.xcodeproj/**"
-      - "dist/update_appcast.py"
-      - ".github/workflows/fork-release.yml"
   workflow_dispatch:
 
 permissions:
