@@ -1,87 +1,84 @@
 # Release Process
 
-How this fork (`rezaulhreza/clickity`) ships. Upstream's process (a
-hand-published GitHub Release, Developer ID signing, notarization, the Homebrew tap) doesn't apply
-here: its `release.yml` and `prerelease.yml` workflows stay in the repository for merges from
-upstream, and only run when a release is published by hand.
+A release is a signed, notarised `Clickity.dmg` and an `appcast.xml` that Sparkle reads, both on a
+GitHub release in `rezaulhreza/clickity`. Releases are made on a Mac with two scripts, not by CI.
 
-## What a push does
+- The download link is `https://github.com/rezaulhreza/clickity/releases/latest/download/Clickity.dmg`.
+- Installed copies check `https://github.com/rezaulhreza/clickity/releases/latest/download/appcast.xml`
+  (`SUFeedURL` in `Clickity/Info.plist`).
 
-Every push to `main` that touches the app is released automatically by
-`.github/workflows/fork-release.yml`. It:
+Both links follow the release marked "latest", so a new release moves them. Nothing else hosts files.
 
-1. Runs the tests. A failing test stops the release.
-2. Builds a universal (Intel and Apple silicon) app, signed with the Apple Development certificate.
-3. Packs it into a DMG whose volume icon is the app's, and signs the DMG with the Sparkle key.
-4. Publishes a GitHub Release with the DMG and `appcast.xml`, Sparkle's update feed.
+## Set up once
 
-Installed copies read that feed (`SUFeedURL` in `Info.plist`) and offer the new version.
+1. Install a **Developer ID Application** certificate (Xcode → Settings → Accounts → Manage
+   Certificates). Check it with `security find-identity -v -p codesigning`.
+2. Save the notarisation login in the Keychain. The scripts use the profile `brah-notary` by default,
+   since a profile belongs to the Apple account, not to one app. On a new Mac, make it (you type the
+   app-specific password yourself):
 
-- A push releases when it changes `Clickity/**`, `Clickity.xcodeproj/**`,
-  `dist/update_appcast.py` or the workflow itself. Documentation-only pushes don't.
-- **Actions → Fork Release → Run workflow** releases the current `main` by hand.
-- Never commit the DMG or any build output to git; it only goes on the Release.
+   ```sh
+   xcrun notarytool store-credentials brah-notary --apple-id YOU@EXAMPLE.COM --team-id TEAMID
+   ```
 
-## Before pushing to `main`
+3. Run `scripts/release.sh 1.0.0 --dry-run` once, so Sparkle's tools are on disk. Then make
+   Clickity's update signing key. It is its own Keychain account, `clickity`, apart from other
+   apps' keys:
 
-A push to `main` reaches users as an update, so check first:
+   ```sh
+   ~/Library/Caches/clickity-release/dd/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys --account clickity
+   ```
 
-1. All tests pass locally (the `test` command in `CLAUDE.md`).
-2. SwiftLint is clean on the files you touched.
-3. The code compiles with **Xcode 26.6**. GitHub's `macos-26` runner has no Xcode 27, and its older
-   Swift compiler can fail to infer types that Xcode 27 accepts, such as a closure returning a labeled
-   tuple. Give such expressions explicit types.
-4. `actionlint .github/workflows/fork-release.yml` is clean if you changed the workflow.
+   Back up the private key outside the repository. Without it, no installed Clickity accepts your
+   updates:
 
-After pushing, watch the run. A failed run publishes nothing: fix the cause and push again.
+   ```sh
+   ~/Library/Caches/clickity-release/dd/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys --account clickity -x ~/clickity-sparkle-private.key
+   ```
+
+The scripts read optional overrides from `~/.config/clickity/release.env`: `CLICKITY_SIGN_IDENTITY`,
+`CLICKITY_NOTARY_PROFILE` and `CLICKITY_SPARKLE_ACCOUNT`.
+
+## Make a release
+
+1. Add a `## 1.0.1` section to `CHANGELOG.md` that says what changed, in plain words for the people
+   who use Clickity. It goes into the update window and onto the GitHub release.
+2. Commit everything. The script refuses uncommitted app changes, so the release matches a commit.
+3. Run the tests (the `test` command in `CLAUDE.md`), with Clickity quit.
+4. Try the build without notarisation:
+
+   ```sh
+   scripts/release.sh 1.0.1 --dry-run
+   ```
+
+5. Make the release. It builds for Apple silicon and Intel, signs, notarises, staples and writes the
+   appcast into `~/Library/Caches/clickity-release/v1.0.1/`:
+
+   ```sh
+   scripts/release.sh 1.0.1
+   ```
+
+6. Publish it. This pushes, tags `v1.0.1` on the commit that was built and makes the GitHub release:
+
+   ```sh
+   scripts/publish.sh 1.0.1
+   ```
+
+## Versions and builds
+
+- The version (`1.0.1`) is what people see. The build number is the commit count of `HEAD`, so it
+  always grows on `main`. Sparkle compares build numbers, so release from `main` only.
+- The update key goes into `Info.plist` for the release build only, and `git checkout` puts the
+  placeholder back. Builds from `scripts/install.sh` keep the placeholder, so they never update
+  themselves and Settings says so.
+- The appcast lists only the newest build. GitHub's `latest` link always serves the newest appcast, so
+  older entries are not needed.
+
+## Download counts
 
 ```sh
-gh run list --repo rezaulhreza/clickity --workflow fork-release.yml -L 3
-gh run watch <run id> --repo rezaulhreza/clickity --exit-status
-gh run view <run id> --repo rezaulhreza/clickity --log-failed
+gh release view v1.0.0 --repo rezaulhreza/clickity --json assets --jq '.assets[] | "\(.name) \(.downloadCount)"'
 ```
-
-## Versions and tags
-
-- The version is `1.0.<commit count>`. The build number is the commit count, which is what Sparkle
-  compares, so every push to `main` is newer than the last.
-- Tags are `fork-<yyyy.mm.dd>-<short sha>`, so they never collide with upstream's version tags.
-- The release notes are the commit subjects since the previous release. Write subjects a user can read.
-
-## Secrets
-
-Repository secrets, named as in upstream's `release.yml`:
-
-| Secret | Holds |
-|---|---|
-| `APPLE_CERTIFICATE_BASE64` | The Apple Development certificate and private key as a base64 `.p12` |
-| `APPLE_CERTIFICATE_PASSWORD` | The `.p12`'s password |
-| `APPLE_TEAM_ID` | The team the certificate belongs to |
-| `SPARKLE_PUBLIC_EDDSA_KEY` | Written into `Info.plist` as `SUPublicEDKey` by the workflow |
-| `SPARKLE_PRIVATE_EDDSA_KEY` | Signs each DMG |
-
-- The Sparkle private key also lives in the login keychain of the Mac that created it ("Private key
-  for signing Sparkle updates"). Installed copies only accept updates signed with it, so keep a backup:
-  `generate_keys -x <file>` from Sparkle's `bin` folder exports it.
-- The Apple Development certificate expires after a year. Export the new one from Keychain Access
-  (**File → Export Items…**) and replace the first two secrets.
-- Local builds keep the placeholder Sparkle key, so `UpdaterService` never starts the updater in them.
-
-## Installing
-
-- The build isn't notarized. On another Mac, macOS blocks the first launch until **System Settings →
-  Privacy & Security → Open Anyway** (or `xattr -dr com.apple.quarantine /Applications/Clickity.app`).
-  The release notes say so. Installing without that warning needs a Developer ID certificate and
-  notarization.
-- **The release after 2026-10-01 drops the App Sandbox** (spec 0007). Its preferences, the agent token
-  and the saved web script are copied from the old container on first launch, so settings, shortcuts and
-  connected agents should carry over. Check the update from the last sandboxed release by hand (settings,
-  shortcuts, custom output folder, agents still Connected, no permission asked again) before relying on it.
-- Clickity has its own bundle ID (`com.rezaulhreza.Clickity`), so it installs next to the official BetterCapture.
-  Copies installed under the old name, BetterCapture, can't update to Clickity (Sparkle needs the same
-  bundle ID): they need one manual install, and macOS asks for Clickity's permissions again.
-- Copies installed before this workflow (up to `fork-2026.09.29-a87a5dd`) have no Sparkle key and
-  can't update themselves; they need one manual install.
 
 ## Not yet verified
 

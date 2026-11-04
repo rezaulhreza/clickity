@@ -29,7 +29,7 @@ How Clickity is built. Component structure, data flow, and implementation detail
 
 ## Process
 
-- [Release Process:](RELEASE.md) Automatic releases on every push to `main`, the pre-push checklist, versions and secrets.
+- [Release Process:](RELEASE.md) Making a signed, notarised DMG and its Sparkle update with `scripts/release.sh` and `scripts/publish.sh`.
 - [Smoke Testing:](SMOKE_TESTING.md) Manual test matrix covering all codec/container/audio combinations.
 
 ## Decisions
