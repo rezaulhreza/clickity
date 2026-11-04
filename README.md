@@ -187,8 +187,8 @@ Bug reports and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md
 
 ## Credits
 
-Clickity is a fork of [Orbit](https://github.com/diip3sh/orbit) by diip3sh, which is a fork of
-[BetterCapture](https://github.com/jsattler/BetterCapture) by Joshua Sattler and its contributors.
+Clickity is a fork of [BetterCapture](https://github.com/jsattler/BetterCapture) by Joshua Sattler
+and its contributors.
 
 ## License
 
