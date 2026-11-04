@@ -46,6 +46,8 @@ On first launch:
 
 Microphone and camera ask for access the first time you turn them on.
 
+To open Clickity when you log in, turn on **Settings → General → Open at Login**.
+
 To update, run `git pull`, then `scripts/install.sh` again.
 
 ## What it does

@@ -267,6 +267,10 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
+            Section("Startup") {
+                OpenAtLoginToggle()
+            }
+
             Section("Output Location") {
                 FolderSettingRow(
                     title: "Recordings",
