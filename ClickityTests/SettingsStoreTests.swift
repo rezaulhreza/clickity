@@ -39,9 +39,9 @@ struct SettingsStoreTests {
         #expect(store.frameRate == .fps60)
     }
 
-    @Test func recordInputTelemetryIsOffByDefault() {
+    @Test func recordInputTelemetryIsOnByDefault() {
         let store = makeStore()
-        #expect(store.recordInputTelemetry == false)
+        #expect(store.recordInputTelemetry)
     }
 
     @Test func keepSystemCursorInVideoIsOffByDefault() {
@@ -51,6 +51,12 @@ struct SettingsStoreTests {
 
     @Test func cursorIsLeftToTheEditorWhileTelemetryIsRecordedUnlessKept() {
         let store = makeStore()
+        // Telemetry is on by default, so the editor draws the cursor
+        #expect(store.leavesCursorToEditor)
+        #expect(!store.capturesCursor)
+
+        store.recordInputTelemetry = false
+        #expect(!store.leavesCursorToEditor)
         #expect(store.capturesCursor)
 
         store.recordInputTelemetry = true

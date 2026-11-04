@@ -40,7 +40,8 @@ The script builds the app, installs it as `/Applications/Clickity.app` and opens
 On first launch:
 
 1. Find the Clickity icon in the menu bar.
-2. Allow **Screen Recording** when macOS asks.
+2. Allow **Screen Recording** and **Input Monitoring** when macOS asks. Input Monitoring lets
+   Clickity see your clicks, which is what it zooms in on.
 3. Quit Clickity and open it again.
 
 Microphone and camera ask for access the first time you turn them on.

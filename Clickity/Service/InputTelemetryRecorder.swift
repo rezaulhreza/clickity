@@ -224,6 +224,14 @@ final class InputTelemetryRecorder {
 
     // MARK: - Setup
 
+    /// Asks for Input Monitoring once, if it isn't granted: clicks, scrolls and keystrokes need it, and the editor
+    /// zooms on clicks. macOS shows its prompt only the first time; a grant takes effect after a relaunch.
+    static func requestAccessIfNeeded() {
+        if !CGPreflightListenEventAccess() {
+            _ = CGRequestListenEventAccess()
+        }
+    }
+
     /// Starts a listen-only tap for key presses, clicks and scrolls, and returns whether keystrokes
     /// will be recorded.
     ///

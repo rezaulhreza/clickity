@@ -184,8 +184,8 @@ struct VideoSettingsView: View {
                 }
                 .onChange(of: settings.recordInputTelemetry) { _, isEnabled in
                     // Ask up front; without Input Monitoring clicks, scrolls and keystrokes are simply skipped
-                    if isEnabled && !CGPreflightListenEventAccess() {
-                        _ = CGRequestListenEventAccess()
+                    if isEnabled {
+                        InputTelemetryRecorder.requestAccessIfNeeded()
                     }
                 }
 

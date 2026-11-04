@@ -49,6 +49,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         registerKeyboardShortcuts()
+        // At launch, like Screen Recording: a grant needs a relaunch, so the first take then has its clicks
+        if viewModel.settings.recordInputTelemetry {
+            InputTelemetryRecorder.requestAccessIfNeeded()
+        }
         // Made now so it follows selections and takes started before it is first shown
         _ = captureToolbar
         ColorPanelPlacement.start()

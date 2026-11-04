@@ -492,11 +492,12 @@ final class SettingsStore {
 
     // MARK: - Input Telemetry Settings
 
-    /// Whether cursor, click, scroll and keystroke telemetry is saved as a JSON sidecar next to each recording
+    /// Whether cursor, click, scroll and keystroke telemetry is saved as a JSON sidecar next to each recording.
+    /// On by default: the editor's automatic zooms and its redrawn cursor are built from it.
     var recordInputTelemetry: Bool {
         get {
             access(keyPath: \.recordInputTelemetry)
-            return defaults.bool(forKey: "recordInputTelemetry")
+            return defaults.object(forKey: "recordInputTelemetry") as? Bool ?? true
         }
         set {
             withMutation(keyPath: \.recordInputTelemetry) {
