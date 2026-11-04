@@ -1,0 +1,469 @@
+//
+//  EditorViewModel.swift
+//  Clickity
+//
+//  Created by Diip3sh on 26.09.26.
+//
+
+import CoreGraphics
+import CoreMedia
+import Foundation
+import OSLog
+
+/// State and intents of one editor window: the recording, its project, playback and export.
+@MainActor
+@Observable
+final class EditorViewModel {
+
+    /// Changes only when ``rename(to:)`` moves the recording.
+    var videoURL: URL
+    let playback = PlaybackController()
+
+    /// The window's undo manager. ``EditorWindowManager`` hands it to AppKit, so ⌘Z and ⇧⌘Z reach it.
+    @ObservationIgnored let undoManager = UndoManager()
+
+    /// The recording, or `nil` while it loads or when it couldn't be opened.
+    private(set) var source: EditorSource?
+    private(set) var project = EditorProject()
+    private(set) var timeMap = TimeMap(cuts: [], sourceDuration: 0, frameRate: 60)
+
+    var selection: EditorSelection?
+
+    /// Clicks and keystrokes on the timeline, or `nil` without telemetry.
+    private(set) var markers: TimelineMarkers?
+
+    /// The filmstrip, left to right.
+    private(set) var thumbnails: [CGImage?] = []
+
+    /// Why the recording couldn't be opened, while ``source`` is `nil`, or why edits weren't saved.
+    var error: EditorError?
+
+    /// How far an export is, from 0 to 1, or `nil` when none is running.
+    private(set) var exportProgress: Double?
+
+    /// How far Find Sensitive Info is, from 0 to 1, or `nil` when it isn't running, and how much it found last.
+    var sensitiveInfoProgress: Double?
+    var sensitiveInfoFound: Int?
+    @ObservationIgnored var sensitiveInfoSearch: Task<Void, Never>?
+
+    /// The project as last read from or written to disk.
+    @ObservationIgnored private var savedProject = EditorProject()
+    @ObservationIgnored private(set) var autosave: Task<Void, Never>?
+
+    /// What the player shows and export writes. Behind the project while a rebuild runs.
+    @ObservationIgnored private var plan: RenderPlan?
+    @ObservationIgnored private(set) var composition: EditorComposition?
+    @ObservationIgnored private var rebuild: Task<Void, Never>?
+
+    /// The click sounds' file, once something asked for them: written once per window, since it is on the source
+    /// timeline and cuts only choose which parts play. `nil` inside when there are no presses.
+    @ObservationIgnored var clickSoundFile: Task<URL?, Never>?
+
+    /// The music's bookmark and the task opening its file (access stays on until it's replaced or the window closes).
+    @ObservationIgnored var backgroundAudio: (bookmark: Data, url: Task<URL?, Never>)?
+
+    /// Each sped-up part's file, rendered the first time a part is at that speed and kept until the window closes, so
+    /// undo and redo don't render again, with the file it was rendered from (a track's enhanced file, or the
+    /// recording). `nil` inside when it couldn't be rendered.
+    @ObservationIgnored var fastPartAudio: [SpeedAudio.Part: (source: URL, file: Task<URL?, Never>)] = [:]
+
+    /// Each track's file with its voice isolated, rendered the first time Enhance Voice is on for it and kept until the
+    /// window closes. `nil` inside when it couldn't be rendered.
+    @ObservationIgnored var enhancedVoice: [CMPersistentTrackID: Task<URL?, Never>] = [:]
+
+    /// The keyboard layout in use when the editor opened, the system's arrow for recordings made
+    /// without the cursor, and the background picture.
+    @ObservationIgnored var resources = RenderResources.none
+
+    /// The bookmark whose picture is in ``resources``.
+    @ObservationIgnored var backgroundBookmark: Data?
+
+    /// The file the canvas's picture was read from, so the inspector can ring the chosen wallpaper.
+    var backgroundImageURL: URL?
+
+    /// The system's wallpapers the inspector offers, once ``loadWallpapers()`` has read them.
+    var wallpapers: [SystemWallpaper] = []
+
+    /// The saved styles the Style menu offers, read when the recording opens and after each change to them.
+    var stylePresets: [StylePreset] = []
+
+    /// Which edits share an undo step.
+    @ObservationIgnored private var coalescedEdits = EditCoalescing()
+
+    /// Told after a rename moved the recording, so the window follows it.
+    @ObservationIgnored var onRename: ((_ old: URL, _ new: URL) -> Void)?
+
+    /// How long edits must settle before they are saved.
+    private static let autosaveDelay = Duration.seconds(1)
+
+    let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Clickity", category: "EditorViewModel")
+
+    init(videoURL: URL) {
+        self.videoURL = videoURL
+    }
+
+    /// Loads the recording and its project; the window shows a placeholder meanwhile. With `time`, loads
+    /// again (its files moved) and shows source time `time`.
+    func load(reloadingAt time: Double? = nil) async {
+        guard source == nil || time != nil else { return }
+        let source: EditorSource
+        let project: EditorProject
+        do {
+            source = try await EditorSourceLoader.load(videoURL: videoURL)
+        } catch {
+            fail(error as? EditorError ?? .unreadableVideo(error))
+            return
+        }
+        do {
+            // A new project starts with the automatic zooms
+            project = try await ProjectStore.read(for: videoURL)
+                ?? EditorProject(zooms: source.telemetry.map { AutoZoomGenerator.segments(for: $0, duration: source.duration) } ?? [])
+        } catch {
+            fail(.unreadableProject(error))
+            return
+        }
+        resources.keyLabels = KeyLabelFormatter.current()
+        resources.arrow = source.telemetry?.capture.cursorInVideo == false ? StandardCursors.arrowSprite : nil
+        let backgroundIsReadable = await updateBackgroundImage(for: project.canvas.imageBookmark)
+        let plan = await RenderPlan.build(project: project, source: source, resources: resources)
+        let extra = await extraAudio(for: project.audio, source: source, timeMap: plan.timeMap)
+        let composition: EditorComposition
+        do {
+            composition = try await CompositionBuilder.composition(for: source, plan: plan, audio: project.audio, extra: extra)
+        } catch {
+            fail(.unreadableVideo(error))
+            return
+        }
+        guard !Task.isCancelled else { return }
+
+        self.source = source
+        self.project = project
+        savedProject = project
+        stylePresets = StylePresetStore.list()
+        markers = source.telemetry.map(TimelineMarkers.init)
+        updateTimeline()
+        show(composition, plan: plan, atSource: time ?? 0)
+        // After show(...): failing while the source is still nil would flash "Can't Open Recording"
+        if !backgroundIsReadable {
+            fail(.unreadableBackground)
+        }
+        logger.info("Opened \(self.videoURL.lastPathComponent)")
+    }
+
+    /// Loads the filmstrip for `count` tiles of at most `maximumSize` pixels. Cancelled when the
+    /// timeline's layout changes.
+    func loadThumbnails(count: Int, maximumSize: CGSize) async {
+        guard let source, count > 0 else { return }
+        let times = (0..<count).map { (Double($0) + 0.5) * source.duration / Double(count) }
+        let images = await ThumbnailProvider.thumbnails(of: source, at: times, maximumSize: maximumSize)
+        guard !Task.isCancelled else { return }
+        thumbnails = images
+    }
+
+    /// Applies an edit as one undo step named `actionName`, then saves once edits settle.
+    ///
+    /// With `coalescing`, an edit with the same name within a second of the previous one joins its
+    /// undo step, so dragging a slider or a color is undone at once.
+    func edit(_ actionName: String, coalescing: Bool = false, _ change: (inout EditorProject) -> Void) {
+        var edited = project
+        change(&edited)
+        guard edited != project else { return }
+
+        if coalescedEdits.joinsPrevious(actionName, coalescing: coalescing) {
+            // The undo step the first of these edits registered restores the project from before all of them
+            let previous = project
+            project = edited
+            projectChanged(from: previous)
+        } else {
+            setProject(edited, actionName: actionName)
+        }
+    }
+
+    /// The click highlight style, for the inspector's controls. Each change is an edit.
+    var clickHighlights: ClickHighlightStyle {
+        get { project.clickHighlights }
+        set { edit("Click Highlights", coalescing: true) { $0.clickHighlights = newValue } }
+    }
+
+    /// The keystroke overlay style, for the inspector's controls. Each change is an edit.
+    var keystrokes: KeystrokeOverlayStyle {
+        get { project.keystrokes }
+        set { edit("Keystrokes", coalescing: true) { $0.keystrokes = newValue } }
+    }
+
+    /// The drawn cursor's style, for the inspector's controls. Each change is an edit.
+    var cursor: CursorStyle {
+        get { project.cursor }
+        set { edit("Cursor", coalescing: true) { $0.cursor = newValue } }
+    }
+
+    /// The canvas's style, for the inspector's controls. Each change is an edit.
+    var canvas: CanvasStyle {
+        get { project.canvas }
+        set { edit("Canvas", coalescing: true) { $0.canvas = newValue } }
+    }
+
+    /// Makes the picture at `url`, chosen by the user, the canvas's background.
+    func setBackgroundImage(_ url: URL) {
+        do {
+            let bookmark = try BackgroundImageLoader.bookmark(for: url)
+            edit("Background Image") { $0.canvas.setImage(bookmark) }
+        } catch {
+            logger.error("No bookmark for \(url.lastPathComponent): \(error.localizedDescription)")
+            fail(.unreadableBackground)
+        }
+    }
+
+    /// The audio tracks' volumes, for the inspector's controls. Each change is an edit.
+    var audio: AudioMixSettings {
+        get { project.audio }
+        set { edit("Audio", coalescing: true) { $0.audio = newValue } }
+    }
+
+    /// The exported frame's size for a shorter side of `resolution` pixels, or the one that keeps the video's
+    /// own pixels.
+    func exportSize(resolution: Int?) -> CGSize {
+        guard let videoSize else { return .zero }
+        return CanvasLayout.size(
+            for: videoSize, aspect: project.canvas.aspect, padding: project.canvas.padding,
+            shorterSide: exportShorterSide(resolution)
+        )
+    }
+
+    private func exportShorterSide(_ resolution: Int?) -> CGFloat? {
+        guard let videoSize else { return nil }
+        return resolution.map { CGFloat($0) }
+            ?? CanvasLayout.nativeShorterSide(for: videoSize, style: project.canvas)
+    }
+
+    /// Exports the edited video as `<name>-edited` to `destination` and returns where, or `nil` while the
+    /// recording isn't loaded. Cancelling the calling task cancels the export.
+    func export(_ settings: ExportSettings, to destination: ExportDestination = .recordingFolder) async throws -> URL? {
+        await rebuild?.value
+        guard let source, var composition else { return nil }
+        // Drawn at the export's size, frame rate and dynamic range; otherwise the same as the preview
+        let frameRate = settings.outputFrameRate(recordingRate: source.frameRate)
+        let target = RenderTarget(shorterSide: exportShorterSide(settings.resolution), frameRate: frameRate, keepsHDR: settings.keepsHDR)
+        let plan = await RenderPlan.build(project: project, source: source, resources: resources, target: target)
+        composition.videoComposition = CompositionBuilder.videoComposition(for: source, plan: plan, frameRate: frameRate)
+        let url = destination.outputURL(for: videoURL, format: settings.format)
+        exportProgress = 0
+        defer { exportProgress = nil }
+
+        do {
+            try await ExportService.export(composition, to: url, as: settings) { [weak self] in
+                self?.exportProgress = $0
+            }
+        } catch {
+            guard !Task.isCancelled else { throw CancellationError() }
+            logger.error("Export of \(self.videoURL.lastPathComponent) failed: \(error.localizedDescription)")
+            throw EditorError.exportFailed(error)
+        }
+        logger.info("Exported \(url.lastPathComponent)")
+        return url
+    }
+
+    /// Puts the frame at the playhead on the pasteboard as a PNG, drawn as an export at the original size draws
+    /// it, in SDR so every app pastes it alike. Returns whether it did.
+    func copyFrame() async -> Bool {
+        await rebuild?.value
+        guard let source, var composition else { return false }
+        let target = RenderTarget(shorterSide: exportShorterSide(nil), keepsHDR: false)
+        let plan = await RenderPlan.build(project: project, source: source, resources: resources, target: target)
+        composition.videoComposition = CompositionBuilder.videoComposition(for: source, plan: plan)
+        let frames = FrameGrid(frameRate: source.frameRate, duration: plan.timeMap.outputDuration)
+        let time = frames.time(ofFrame: frames.frame(at: playback.currentTime))
+        do {
+            let image = try await FrameGrabber.image(of: composition, at: time, timescale: source.timescale)
+            ImagePasteboard.copy(png: try await ScreenshotService.pngData(of: image))
+            return true
+        } catch {
+            fail(.frameNotCopied(error))
+            return false
+        }
+    }
+
+    /// Releases the player and filmstrip and saves pending edits. Called when the window closes.
+    func close() async {
+        rebuild?.cancel()
+        sensitiveInfoSearch?.cancel()
+        playback.release()
+        thumbnails = []
+        await releaseAudioFiles()
+        await flushSave()
+    }
+
+    // MARK: - Private
+
+    /// Replaces the project, registering the previous one for undo (and so, when undoing, for redo).
+    private func setProject(_ newProject: EditorProject, actionName: String) {
+        guard newProject != project else { return }
+        let previous = project
+        project = newProject
+        undoManager.registerUndo(withTarget: self) { viewModel in
+            viewModel.coalescedEdits.reset()
+            viewModel.setProject(previous, actionName: actionName)
+        }
+        undoManager.setActionName(actionName)
+        projectChanged(from: previous)
+    }
+
+    private func projectChanged(from previous: EditorProject) {
+        // A zoom stays selected while it's being changed
+        if selectedZoom == nil {
+            selection = nil
+        }
+        updateTimeline()
+        // Splits and volumes aren't drawn; anything else is
+        var drawn = project
+        drawn.splits = previous.splits
+        drawn.audio = previous.audio
+        if drawn != previous || needsNewAudioFiles {
+            rebuildPlan()
+        } else if project.audio != previous.audio, let source, let plan {
+            let audioMix = CompositionBuilder.audioMix(
+                for: source, timeMap: plan.timeMap, settings: project.audio, extra: composition?.extraAudio ?? ExtraAudio()
+            )
+            composition?.audioMix = audioMix
+            playback.setAudioMix(audioMix)
+        }
+        scheduleAutosave()
+    }
+
+    private func updateTimeline() {
+        guard let source else { return }
+        timeMap = TimeMap(cuts: project.cuts, speeds: project.speeds, sourceDuration: source.duration, frameRate: source.frameRate)
+    }
+
+    /// Builds a plan for the project off the main actor, replacing a build still running, and shows
+    /// it. New cuts need a new player item, whose playhead stays on the same content.
+    private func rebuildPlan() {
+        guard let source else { return }
+        rebuild?.cancel()
+        let project = project
+        rebuild = Task {
+            if !(await updateBackgroundImage(for: project.canvas.imageBookmark)) {
+                fail(.unreadableBackground)
+            }
+            let plan = await RenderPlan.build(project: project, source: source, resources: resources)
+            let extra = await extraAudio(for: self.project.audio, source: source, timeMap: plan.timeMap)
+            guard !Task.isCancelled, let playing = self.plan, var composition else { return }
+            guard plan.timeMap != playing.timeMap || extra != composition.extraAudio else {
+                composition.videoComposition = CompositionBuilder.videoComposition(for: source, plan: plan)
+                composition.audioMix = CompositionBuilder.audioMix(for: source, timeMap: plan.timeMap, settings: self.project.audio, extra: extra)
+                self.plan = plan
+                self.composition = composition
+                playback.setVideoComposition(composition.videoComposition)
+                playback.setAudioMix(composition.audioMix)
+                return
+            }
+
+            let playhead = playing.timeMap.sourceTime(atOutput: playback.currentTime)
+            do {
+                let rebuilt = try await CompositionBuilder.composition(for: source, plan: plan, audio: self.project.audio, extra: extra)
+                guard !Task.isCancelled else { return }
+                show(rebuilt, plan: plan, atSource: playhead)
+            } catch {
+                fail(.unreadableVideo(error))
+            }
+        }
+    }
+
+    /// Plays a new composition, paused at source time `time` or the first frame after it.
+    private func show(_ composition: EditorComposition, plan: RenderPlan, atSource time: Double) {
+        guard let source else { return }
+        self.plan = plan
+        self.composition = composition
+        let frames = FrameGrid(frameRate: source.frameRate, duration: plan.timeMap.outputDuration)
+        playback.load(composition, frames: frames, timescale: source.timescale, at: plan.timeMap.outputTime(atSource: time))
+    }
+
+    private func scheduleAutosave() {
+        autosave?.cancel()
+        autosave = Task { [weak self] in
+            try? await Task.sleep(for: Self.autosaveDelay)
+            guard !Task.isCancelled else { return }
+            await self?.save()
+        }
+    }
+
+    func save() async {
+        guard project != savedProject else { return }
+        let project = project
+        do {
+            try await ProjectStore.write(project, for: videoURL)
+            savedProject = project
+        } catch {
+            fail(.projectNotSaved(error))
+        }
+    }
+
+    func fail(_ error: EditorError) {
+        logger.error("\(self.videoURL.lastPathComponent): \(error.localizedDescription)")
+        self.error = error
+    }
+}
+
+// MARK: - Cutting
+
+extension EditorViewModel {
+
+    /// The kept ranges divided at the project's splits: what can be selected.
+    var segments: [Range<Double>] {
+        timeMap.segments(splitAt: project.splits)
+    }
+
+    /// The playhead in source seconds. Not observed during playback.
+    var playheadSourceTime: Double {
+        timeMap.sourceTime(atOutput: playback.currentTime)
+    }
+
+    /// Something must stay, so the only segment left can't be cut.
+    var canDeleteSelection: Bool {
+        switch selection {
+        case .segment: segments.count > 1
+        case .zoom, .mask: true
+        case nil: false
+        }
+    }
+
+    /// Shows the frame at source time `time`, or the first one after it inside a cut.
+    func seek(toSource time: Double) {
+        playback.seek(to: timeMap.outputTime(atSource: time))
+    }
+
+    /// Selects the segment at source time `time`; inside a cut, nothing.
+    func select(at time: Double) {
+        selection = segments.first { $0.contains(time) }.map(EditorSelection.segment)
+    }
+
+    /// Divides the segment under the playhead in two, at the frame shown.
+    func split() {
+        let splits = (project.splits + [timeMap.snapped(playheadSourceTime)]).sorted()
+        guard timeMap.segments(splitAt: splits) != segments else { return }
+        edit("Split") { $0.splits = splits }
+    }
+
+    /// Cuts the selected segment or deletes the selected zoom or mask.
+    func deleteSelection() {
+        guard let selection, canDeleteSelection else { return }
+        switch selection {
+        case .segment(let range):
+            edit("Cut") { $0.cuts = timeMap.cuts(adding: range) }
+        case .zoom(let id):
+            edit("Delete Zoom") { $0.zooms = $0.zooms.removing(id) }
+        case .mask(let id):
+            edit("Delete Mask") { $0.masks = $0.masks.removing(id) }
+        }
+    }
+
+    /// Moves kept range `index`'s start to source time `time`, cutting or restoring the recording there.
+    func moveStart(ofKeptRange index: Int, to time: Double) {
+        edit("Trim") { $0.cuts = timeMap.cuts(movingStartOf: index, to: time) }
+    }
+
+    /// Moves kept range `index`'s end to source time `time`, cutting or restoring the recording there.
+    func moveEnd(ofKeptRange index: Int, to time: Double) {
+        edit("Trim") { $0.cuts = timeMap.cuts(movingEndOf: index, to: time) }
+    }
+}

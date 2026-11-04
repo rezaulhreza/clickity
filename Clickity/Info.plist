@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Clickity needs access to your microphone to record audio alongside screen captures.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Clickity needs access to your camera to enable Presenter Overlay during screen recordings.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Clickity needs access to screen recording to capture your screen content.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/rezaulhreza/clickity/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>SPARKLE_PUBLIC_KEY</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Clickity Style</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.rezaulhreza.clickity.style</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.rezaulhreza.clickity.style</string>
+			<key>UTTypeDescription</key>
+			<string>Clickity Style</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>clickitystyle</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.rezaulhreza.Clickity</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>clickity</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

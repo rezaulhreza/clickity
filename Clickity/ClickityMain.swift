@@ -1,0 +1,23 @@
+//
+//  ClickityMain.swift
+//  Clickity
+//
+
+import SwiftUI
+
+/// The app's entry point. Started with `--mcp` by a coding agent, it only bridges the agent to the
+/// running app (``AgentBridgeClient``); otherwise it's the app (``ClickityApp``), after bringing over
+/// what the old sandboxed app kept (``ContainerMigration``).
+@main
+enum ClickityMain {
+    static func main() {
+        if CommandLine.arguments.dropFirst().first == AgentBridgeClient.argument {
+            AgentBridgeClient.run()
+        }
+        ContainerMigration.run()
+        #if DEBUG
+        DebugInjection.load()
+        #endif
+        ClickityApp.main()
+    }
+}

@@ -1,0 +1,43 @@
+//
+//  ContentVisibility.swift
+//  Clickity
+//
+//  Created by Joshua Sattler on 30.08.26.
+//
+
+import Foundation
+
+/// The user's content filter preferences, decoupled from ``SettingsStore`` so the
+/// rules in ``ContentFilterRules`` can be tested without `UserDefaults`.
+struct ContentVisibility: Equatable, Sendable {
+
+    /// Whether the desktop wallpaper is part of the capture.
+    let showWallpaper: Bool
+
+    /// Whether the Dock is part of the capture.
+    let showDock: Bool
+
+    /// Whether Clickity's own windows are part of the capture.
+    let showClickity: Bool
+
+    /// Whether Finder's desktop icons are part of the capture.
+    let showDesktopIcons: Bool
+
+    /// The bundle identifier of this app, used to recognise its own windows.
+    let ownBundleID: String
+}
+
+extension ContentVisibility {
+
+    /// Reads the visibility preferences from the settings store.
+    @MainActor
+    init(settings: SettingsStore) {
+        self.init(
+            showWallpaper: settings.showWallpaper,
+            showDock: settings.showDock,
+            showClickity: settings.showClickity,
+            showDesktopIcons: settings.showDesktopIcons,
+            ownBundleID: Bundle.main.bundleIdentifier ?? ""
+        )
+    }
+}
