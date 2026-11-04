@@ -21,21 +21,12 @@ CleanShot X built in.
 
 ## Install
 
-You need:
+**[Download Clickity](https://github.com/rezaulhreza/clickity/releases/latest/download/Clickity.dmg)**
+for macOS 15.2 or later, on Apple silicon or Intel.
 
-- macOS 15.2 or later
-- Xcode 26 or later
-- An "Apple Development" or "Developer ID Application" certificate in your keychain
+Open `Clickity.dmg`, drag **Clickity** onto **Applications**, then open it from Applications.
 
-There are no prebuilt downloads yet. Build and install from source:
-
-```sh
-git clone https://github.com/rezaulhreza/clickity.git
-cd clickity
-scripts/install.sh
-```
-
-The script builds the app, installs it as `/Applications/Clickity.app` and opens it.
+Clickity updates itself: **Settings → General → Check for Updates…**.
 
 On first launch:
 
@@ -48,7 +39,20 @@ Microphone and camera ask for access the first time you turn them on.
 
 To open Clickity when you log in, turn on **Settings → General → Open at Login**.
 
-To update, run `git pull`, then `scripts/install.sh` again.
+### Build from source
+
+You need Xcode 26 or later, and an "Apple Development" or "Developer ID Application" certificate
+in your keychain.
+
+```sh
+git clone https://github.com/rezaulhreza/clickity.git
+cd clickity
+scripts/install.sh
+```
+
+The script builds the app, installs it as `/Applications/Clickity.app` and opens it.
+
+To update a build from source, run `git pull`, then `scripts/install.sh` again.
 
 ## What it does
 
@@ -160,6 +164,8 @@ Open these from Terminal (`open "clickity://toggle"`), Shortcuts, Raycast or any
 - `scripts/install.sh` builds a Release app and installs it.
 - `scripts/dev.sh` rebuilds and relaunches a Debug app each time you save a file
   (needs `brew install fswatch`).
+- `scripts/release.sh` and `scripts/publish.sh` make and publish a release: see
+  [docs/RELEASE.md](docs/RELEASE.md).
 
 Both scripts sign with your own certificate. Do not run an unsigned (ad-hoc) build: macOS then
 asks for Screen Recording again after every rebuild.
