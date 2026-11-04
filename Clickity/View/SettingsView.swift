@@ -406,6 +406,9 @@ struct AboutSection: View {
 
     var body: some View {
         Section("About") {
+            Text("The free, open-source Screen Studio alternative for macOS.")
+                .foregroundStyle(.secondary)
+
             LabeledContent("Version", value: "v\(appVersion) (\(gitSHA))")
 
             LabeledContent("Source Code") {
