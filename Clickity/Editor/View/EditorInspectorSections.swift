@@ -190,6 +190,7 @@ struct CursorInspectorSection: View {
             InspectorField("Style") {
                 TilePicker(selection: $viewModel.cursor.appearance, values: CursorStyle.Appearance.allCases) { appearance in
                     switch appearance {
+                    case .clickity: "Clickity"
                     case .recorded: "macOS"
                     case .white: "White"
                     case .dot: "Dot"

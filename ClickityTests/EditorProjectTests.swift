@@ -104,7 +104,7 @@ struct EditorProjectTests {
         expected.animatesClicks = false
         expected.hidesWhenIdle = true
         #expect(cursor == expected)
-        #expect(cursor.appearance == .recorded && !cursor.alwaysUsesArrow && !cursor.loops)
+        #expect(cursor.appearance == .clickity && !cursor.alwaysUsesArrow && !cursor.loops)
 
         let audio = try JSONDecoder().decode(AudioMixSettings.self, from: Data(#"{ "tracks": [{ "volume": 0.5, "isMuted": true }] }"#.utf8))
         #expect(audio.tracks == [AudioMixSettings.Track(volume: 0.5, isMuted: true)])

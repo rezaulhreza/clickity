@@ -108,6 +108,8 @@ struct PauseCutExportTests {
         // The editor: a red ring 60 px wide for 0.2 s, a plain canvas, and a cut between the clicks
         var project = EditorProject(cuts: [cut])
         project.canvas = .plain
+        // The recorded arrow, which these resources make a green square
+        project.cursor.appearance = .recorded
         project.clickHighlights.size = 60
         project.clickHighlights.duration = 0.2
         project.clickHighlights.color = RGBAColor(red: 1, green: 0, blue: 0, alpha: 1)

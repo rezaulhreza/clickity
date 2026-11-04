@@ -37,8 +37,29 @@ nonisolated enum OverlayImages {
         // Points from the arrow's top-left corner: the tip, down the left edge, and round the tail
         let outline = [(0, 0), (0, 16.5), (4, 12.7), (6.6, 18.6), (9.1, 17.5), (6.6, 11.8), (11.7, 11.8)]
             .map { CGPoint(x: $0.0, y: $0.1) }
+        return arrow(outline, stroke: CGColor(gray: 0, alpha: 1), lineWidth: 1.25)
+    }
+
+    /// The pointer of Clickity's icon, in points from its tip, top-left origin: the icon's path scaled to the
+    /// macOS arrow's 18.6 pt height. `ClickityPointerShape` draws the inspector's tile from the same points.
+    static let clickityPointer = [(0, 0), (0, 16.4), (4.1, 12.5), (6.9, 18.6), (9.5, 17.5), (6.7, 11.6), (12.3, 11.6)]
+        .map { CGPoint(x: $0.0, y: $0.1) }
+
+    /// The brand teal of the asset catalog's AccentColor (#0E8F76), for drawing off the main actor.
+    static let clickityTeal = CGColor(srgbRed: 14 / 255, green: 143 / 255, blue: 118 / 255, alpha: 1)
+
+    /// Clickity's pointer in white with a teal outline and a soft shadow, hot spot on its tip.
+    static func clickityArrow() -> CursorShapeTrack.Sprite {
+        arrow(clickityPointer, stroke: clickityTeal, lineWidth: 1.5)
+    }
+
+    /// A white arrow through `outline` (points from its top-left corner, the tip first) with a `stroke` edge
+    /// and a soft shadow, drawn at `cursorScale`, hot spot on the tip.
+    private static func arrow(_ outline: [CGPoint], stroke: CGColor, lineWidth: CGFloat) -> CursorShapeTrack.Sprite {
+        let width = outline.map(\.x).max() ?? 0
+        let height = outline.map(\.y).max() ?? 0
         let margin: CGFloat = 3
-        let size = CGSize(width: (11.7 + 2 * margin) * cursorScale, height: (18.6 + 2 * margin) * cursorScale)
+        let size = CGSize(width: (width + 2 * margin) * cursorScale, height: (height + 2 * margin) * cursorScale)
         let image = draw(size: size) { context in
             // The shadow's offset and blur are in pixels whatever the transform: 1 pt down, 2 pt blur, 35%
             context.setShadow(offset: CGSize(width: 0, height: -cursorScale), blur: 2 * cursorScale, color: CGColor(gray: 0, alpha: 0.35))
@@ -48,8 +69,8 @@ nonisolated enum OverlayImages {
             context.addLines(between: outline.map { CGPoint(x: $0.x + margin, y: $0.y + margin) })
             context.closePath()
             context.setFillColor(CGColor(gray: 1, alpha: 1))
-            context.setStrokeColor(CGColor(gray: 0, alpha: 1))
-            context.setLineWidth(1.25)
+            context.setStrokeColor(stroke)
+            context.setLineWidth(lineWidth)
             context.setLineJoin(.round)
             context.drawPath(using: .fillStroke)
             context.endTransparencyLayer()

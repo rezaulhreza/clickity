@@ -177,6 +177,19 @@ struct FrameRendererTests {
         #expect(abs(Int(image.pixel(at: CGPoint(x: 100, y: 215))[0]) - 128) < 6)
     }
 
+    @Test func theClickityPointersTipIsOnThePointWithATealEdge() {
+        let frame = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5)).cropped(to: bounds)
+
+        // The pointer's left edge runs down from the tip at 2 px per point: a teal outline 3 px wide on it, white inside
+        let image = render(frame, at: 5, plan: plan(at: 1, cursorStyle: CursorStyle(appearance: .clickity)))
+        let edge = image.pixel(at: CGPoint(x: 99, y: 190))
+        #expect(edge[0] < 60 && edge[1] > edge[0] + 40)
+        #expect(image.pixel(at: CGPoint(x: 104, y: 190)) == [255, 255, 255, 255])
+        // Nothing left of it or above its tip but the faint shadow
+        #expect(abs(Int(image.pixel(at: CGPoint(x: 85, y: 190))[0]) - 128) < 6)
+        #expect(abs(Int(image.pixel(at: CGPoint(x: 100, y: 215))[0]) - 128) < 6)
+    }
+
     @Test func theRingGrowsAndFades() {
         let image = render(CIImage(color: .black).cropped(to: bounds), at: 1.25, plan: plan)
 

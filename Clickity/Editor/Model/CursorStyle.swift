@@ -11,7 +11,7 @@ import Foundation
 nonisolated struct CursorStyle: Codable, Equatable, Sendable {
     var isEnabled = true
 
-    var appearance = Appearance.recorded
+    var appearance = Appearance.clickity
 
     /// Draws the recording's arrow where it showed another shape (I-beam, hand, resize), so the cursor is
     /// one shape throughout. Only for ``Appearance/recorded``.
@@ -40,6 +40,8 @@ nonisolated struct CursorStyle: Codable, Equatable, Sendable {
 
     /// What the cursor looks like.
     nonisolated enum Appearance: String, Codable, CaseIterable, Sendable {
+        /// The pointer from Clickity's icon: white with a teal outline. The default.
+        case clickity
         /// The system cursors that were recorded.
         case recorded
         case white

@@ -165,7 +165,7 @@ struct EditorViewModelStyleTests {
         #expect(viewModel.currentStyle == preset)
         #expect(viewModel.undoManager.undoActionName == "Apply Style")
         viewModel.undoManager.undo()
-        #expect(viewModel.project.cursor.appearance == .recorded)
+        #expect(viewModel.project.cursor.appearance == .clickity)
         #expect(viewModel.project.cuts == [1..<2])
         #expect(viewModel.currentStyle == nil)
     }

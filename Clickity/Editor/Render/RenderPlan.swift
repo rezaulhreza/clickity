@@ -201,6 +201,7 @@ extension RenderPlan {
         // The images are drawn once, here, whatever the appearance
         let shapes = switch style.appearance {
         case .recorded: CursorShapeTrack(telemetry: telemetry, duration: duration, arrow: arrow, arrowOnly: style.alwaysUsesArrow)
+        case .clickity: CursorShapeTrack(sprite: OverlayImages.clickityArrow())
         case .white: CursorShapeTrack(sprite: OverlayImages.whiteArrow())
         case .dot: CursorShapeTrack(sprite: OverlayImages.dot())
         }
