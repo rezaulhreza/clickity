@@ -59,13 +59,28 @@ xcodebuild -scheme Clickity -configuration Release -destination 'generic/platfor
   -derivedDataPath "$derived" \
   CODE_SIGN_IDENTITY="$CLICKITY_SIGN_IDENTITY" DEVELOPMENT_TEAM="$team" \
   CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER="" OTHER_CODE_SIGN_FLAGS="--timestamp" \
+  CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
   MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" \
   build -quiet
 restore
 trap - EXIT
 
 app=$derived/Build/Products/Release/Clickity.app
+
+# Xcode re-signs Sparkle.framework but not the helpers inside it, which keep Sparkle's own signature
+# without a secure timestamp, and notarisation refuses them. Sign them inside out, as Sparkle's
+# documentation says, then the app again with only its own entitlements (no get-task-allow).
+sign() { codesign --force --timestamp --options runtime --sign "$CLICKITY_SIGN_IDENTITY" "$@"; }
+sparkle_framework=$app/Contents/Frameworks/Sparkle.framework/Versions/B
+sign "$sparkle_framework/XPCServices/Installer.xpc"
+sign --preserve-metadata=entitlements "$sparkle_framework/XPCServices/Downloader.xpc"
+sign "$sparkle_framework/Autoupdate"
+sign "$sparkle_framework/Updater.app"
+sign "$app/Contents/Frameworks/Sparkle.framework"
+sign --entitlements Clickity/Clickity.entitlements "$app"
 codesign --verify --deep --strict "$app"
+codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q get-task-allow &&
+  { echo "✗ The app still asks for get-task-allow, which notarisation refuses."; exit 1; }
 
 rm -rf "$out"
 mkdir -p "$out"
